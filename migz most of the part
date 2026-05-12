@@ -1,0 +1,419 @@
+#include <iostream>
+#include <string>
+#include <conio.h>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+#include <ctime>
+#include <cstdlib>
+
+using namespace std;
+
+
+// GAME SETTINGS
+
+const int WIDTH = 80;
+const int HEIGHT = 40;
+
+
+// STRUCTS
+
+struct Node
+{
+    string data;
+    Node* next;
+};
+
+typedef Node* NodePtr;
+
+// PERSON 2 FUNCTIONS
+// ==========================
+
+void hardClear() {
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
+}
+void titleScreen();
+
+string generateBufferLane(){
+    return "|" + string(40, '.') + "|";
+}
+
+string generateRoadLane(){
+    string lane = string(40, '.');
+
+    // 3 trucks
+    for(int t = 0; t < 3; t++){
+        int pos = rand() % 35;
+
+        for(int i = 0; i < 5; i++){
+            lane[pos + i] = '#';
+        }
+    }
+
+    return "|" + lane + "|";
+}
+
+string generateRiverLane(){
+    string lane = string(40, '~');
+
+    // 3 logs
+    for(int t = 0; t < 3; t++){
+        int pos = rand() % 36;
+
+        for(int i = 0; i < 4; i++){
+            lane[pos + i] = '=';
+        }
+    }
+
+    return "|" + lane + "|";
+}
+
+// =====================================
+// TITLE SCREEN
+// =====================================
+
+void titleScreen() {
+    hardClear();
+
+    cout << "============================================================\n";
+    cout << "                 CROSSY ROAD TERMINAL GAME                  \n";
+    cout << "============================================================\n\n";
+
+    cout << "HOW TO PLAY:\n\n";
+
+    cout << "- Use Arrow Keys To Move\n";
+    cout << "- Avoid Trucks ########\n";
+    cout << "- Ride Logs ==========\n";
+    cout << "- Avoid Water ~~~~~~~~\n";
+    cout << "- Reach The Finish Line\n\n";
+
+    cout << "Press ENTER To Start...";
+
+    cin.get();
+}
+
+// ==========================
+// PERSON 1 FUNCTIONS
+// ==========================
+
+NodePtr getLane(NodePtr head, int index){
+    int count = 0;
+
+    while(head != NULL){
+        if(count == index){
+            return head;
+        }
+
+        head = head->next;
+        count++;
+    }
+
+    return NULL;
+}
+
+void appendLane(NodePtr &head, string lane){
+    NodePtr newNode = new Node;
+
+    newNode->data = lane;
+    newNode->next = NULL;
+
+    if(head == NULL){
+        head = newNode;
+    }
+    else{
+        NodePtr temp = head;
+
+        while(temp->next != NULL){
+            temp = temp->next;
+        }
+
+        temp->next = newNode;
+    }
+}
+
+NodePtr buildRoad(){
+    NodePtr head = NULL;
+
+    // Row 0 finish line
+    appendLane(head, "|" + string(40, '=') + "|");
+
+    // Rows 1-20
+    for(int i = 1; i <= 20; i++){
+
+        if(i == 6 || i == 9 || i == 15 || i == 18){
+            appendLane(head, generateBufferLane());
+        }
+        else if(i == 7 || i == 8 || i == 16 || i == 17){
+            appendLane(head, generateRiverLane());
+        }
+        else{
+            appendLane(head, generateRoadLane());
+        }
+    }
+    
+    appendLane(head, "|" + string(40, '.') + "|");
+    appendLane(head, "|" + string(40, '.') + "|");
+
+    return head;
+}
+
+void freeList(NodePtr &head){
+    NodePtr temp;
+
+    while(head != NULL){
+        temp = head;
+        head = head->next;
+        delete temp;
+    }
+
+    head = NULL;
+}
+
+// ==========================
+// PERSON 3 FUNCTIONS
+// ==========================
+
+void displayRoad(NodePtr head, int playerX, int playerY){
+
+#ifdef _WIN32
+    system("cls");
+#else
+    system("clear");
+#endif
+
+    int row = 0;
+
+    while(head != NULL){
+
+        string line = head->data;
+
+        if(row == playerY){
+            line[playerX] = 'P';
+        }
+
+        cout << line << endl;
+
+        head = head->next;
+        row++;
+    }
+
+    cout << endl;
+    cout << "W = UP | S = DOWN | A = LEFT | D = RIGHT" << endl;
+}
+
+void keyboardInput(char input, int &playerX, int &playerY){
+
+    if(input == 'w' || input == 'W'){
+        if(playerY > 0)
+            playerY--;
+    }
+
+    else if(input == 's' || input == 'S'){
+        if(playerY < 21)
+            playerY++;
+    }
+
+    else if(input == 'a' || input == 'A'){
+        if(playerX > 1)
+            playerX--;
+    }
+
+    else if(input == 'd' || input == 'D'){
+        if(playerX < 40)
+            playerX++;
+    }
+}
+
+// ==========================
+// MOVING OBJECTS FUNCTIONS
+// ==========================
+
+void shiftRight(string &lane) {
+    string mid = lane.substr(1, 40);
+
+    char temp = mid[39];
+
+    for (int i = 39; i > 0; i--) {
+        mid[i] = mid[i - 1];
+    }
+
+    mid[0] = temp;
+
+    lane = "|" + mid + "|";
+}
+
+void shiftLeft(string &lane) {
+    string mid = lane.substr(1, 40);
+
+    char temp = mid[0];
+
+    for(int i = 0; i < 39; i++)
+    {
+        mid[i] = mid[i + 1];
+    }
+
+    mid[39] = temp;
+
+    lane = "|" + mid + "|";
+}
+
+void shiftObstacles(NodePtr head) {
+    int row = 0;
+
+    while(head != NULL)
+    {
+        // FINISH LINE
+        if(row == 0)
+        {
+            // do nothing
+        }
+
+        // BUFFER LINES
+        else if(row == 6 || row == 9 || row == 15 || row == 18)
+        {
+            // do nothing
+        }
+
+        // RIVER LINES
+        else if(row == 7 || row == 8 || row == 16 || row == 17)
+        {
+            if(row == 7 || row == 16)
+                shiftRight(head->data);
+            else
+                shiftLeft(head->data);
+        }
+
+        // ROAD LINES
+        else
+        {
+            if(row % 2 == 1)
+                shiftRight(head->data);
+            else
+                shiftLeft(head->data);
+        }
+
+        head = head->next;
+        row++;
+    }
+}
+
+bool isRiverLane(int row) {
+    return (row == 7 || row == 8 || row == 16 || row == 17);
+}
+
+void checkCollision(NodePtr head, int &playerX, int &playerY, int &lives) {
+    NodePtr lane = getLane(head, playerY);
+    if(lane == NULL) return;
+
+    if(playerX < 1) playerX = 1;
+    if(playerX > 40) playerX = 40;
+
+    char tile = lane->data[playerX];
+
+    // =========================
+    // TRUCK COLLISION (ROAD)
+    // =========================
+    if(tile == '#') {
+        lives--;
+        cout << "Hit by truck!" << endl;
+
+        // reset position
+        playerX = 20;
+        playerY = 21;
+        return;
+    }
+
+    // =========================
+    // RIVER COLLISION (WATER)
+    // =========================
+    if(isRiverLane(playerY)) {
+        // If NOT standing on a log ('='), you fall in water
+        if(tile != '=') {
+            lives--;
+            cout << "Fell in water!" << endl;
+
+            // reset position
+            playerX = 20;
+            playerY = 21;
+        }
+    }
+}
+
+void movePlayerWithLog(NodePtr head, int &playerX, int playerY) {
+    if(!isRiverLane(playerY)) return;
+
+    NodePtr lane = getLane(head, playerY);
+    if(lane == NULL) return;
+
+    bool onLog = false;
+
+    for(int i = playerX - 1; i <= playerX + 1; i++) {
+        if(i >= 1 && i <= 40 && lane->data[i] == '=') {
+            onLog = true;
+            break;
+        }
+    }
+
+    if(!onLog) return;
+
+    if(playerY == 7 || playerY == 16) {
+        playerX++;
+        if(playerX > 40) playerX = 40;
+    }
+    else
+    {
+        playerX--;
+        if(playerX < 1) playerX = 1;
+    }
+}
+
+// ==========================
+// MAIN
+// ==========================
+
+int main(){
+
+    srand(time(0));
+
+    NodePtr head = buildRoad();
+
+    int playerX = 20;
+    int playerY = 21;
+
+    int input;
+    int lives = 3;
+
+    while(true) {
+        
+    shiftObstacles(head);
+    movePlayerWithLog(head, playerX, playerY);
+    checkCollision(head, playerX, playerY, lives);
+
+    displayRoad(head, playerX, playerY);
+
+    cout << "Lives: " << lives << endl;
+
+    if(kbhit()) {
+        input = getch();
+        keyboardInput(input, playerX, playerY);
+    }
+
+    if(playerY == 0) {
+        cout << "YOU REACHED THE FINISH LINE!" << endl;
+        break;
+    }
+
+    if(lives <= 0) {
+        cout << "GAME OVER!" << endl;
+        break;
+    }
+}
+
+    freeList(head);
+    
+    return 0;
+}
