@@ -1,0 +1,889 @@
+#include <iostream>
+#include <string>
+#include <windows.h>
+#include <conio.h>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+#include <ctime>
+
+using namespace std;
+
+// =====================================
+// GAME SETTINGS
+// =====================================
+
+const int WIDTH = 40;
+const int HEIGHT = 20;
+
+const char PLAYER = 'P';
+
+// =====================================
+// STRUCTS
+// =====================================
+
+struct Node
+{
+    string data;
+    Node* next;
+};
+
+typedef Node* NodePtr;
+
+struct LeaderboardEntry
+{
+    string name;
+    int score;
+};
+
+// =====================================
+// FUNCTION DECLARATIONS
+// =====================================
+
+// TITLE / MENU
+void showTitleScreen();
+string getPlayerName();
+int chooseDifficulty();
+
+// LINKED LIST
+void appendNode(NodePtr& head, string lane);
+NodePtr getLane(NodePtr head, int index);
+void freeList(NodePtr& head);
+
+// SHIFTING
+string shiftLeft(string lane);
+string shiftRight(string lane);
+
+// GENERATION
+string generateRoadLane(int laneNum, int difficulty);
+string generateRiverLane(int laneNum, int difficulty);
+string generateBufferLane();
+NodePtr buildRoad(int difficulty);
+
+void displayRoad(NodePtr head,
+                 int playerX,
+                 int playerY,
+                 string playerName,
+                 int lives,
+                 int crossings);
+
+void shiftObstacles(NodePtr head);
+
+bool checkCollision(NodePtr head,
+                    int playerX,
+                    int playerY);
+
+bool checkDrowned(NodePtr head,
+                  int playerX,
+                  int playerY);
+
+void updatePlayerWithLog(NodePtr head,
+                         int& playerX,
+                         int playerY);
+
+void keyboardInput(int& playerX,
+                   int& playerY);
+
+bool isRiverLane(int row);
+
+bool isRoadLane(int row);
+
+void setColor(int color);
+void hideCursor();
+void gotoXY(int x, int y);
+
+void saveScore(string name,
+               int score);
+
+void showLeaderboard();
+
+void setColor(int color)
+{
+    SetConsoleTextAttribute(
+        GetStdHandle(STD_OUTPUT_HANDLE),
+        color
+    );
+}
+
+void showTitleScreen()
+{
+    system("cls");
+
+    setColor(11);
+
+    cout << R"(
+
+  ____              _      ____                      _
+ |  _ \ ___   __ _     |
+ | |_) / _ \ / _` | ___|
+ |  _ < (_) | (_| ||   |
+ |_| \_\___/ \__,_||___|
+
+                                                             |___/
+
+)";
+
+    setColor(15);
+
+    cout << "============================================\n";
+    cout << "      ROAD CROSSING CHALLENGE\n";
+    cout << "============================================\n\n";
+
+    cout << "HOW TO PLAY:\n";
+    cout << "- Move using Arrow Keys\n";
+    cout << "- Dodge trucks (#####)\n";
+    cout << "- Ride logs (====)\n";
+    cout << "- Avoid water (~)\n";
+    cout << "- Reach the top 5 times!\n\n";
+
+    cout << "Press ENTER to continue...";
+
+    cin.get();
+}
+
+string getPlayerName()
+{
+    string name;
+
+    system("cls");
+
+    cout << "Enter Player Name: ";
+    getline(cin, name);
+
+    return name;
+}
+
+int chooseDifficulty()
+{
+    int choice;
+
+    system("cls");
+
+    cout << "====================================\n";
+    cout << "       DIFFICULTY SELECTION\n";
+    cout << "====================================\n\n";
+
+    cout << "1. EASY\n";
+    cout << "   Speed: Slow\n";
+    cout << "   Obstacles: 2 per lane\n\n";
+
+    cout << "2. HARD\n";
+    cout << "   Speed: Fast\n";
+    cout << "   Obstacles: 3 per lane\n\n";
+
+    cout << "Enter choice: ";
+    cin >> choice;
+
+    return choice;
+}
+
+void appendNode(NodePtr& head, string lane)
+{
+    NodePtr newNode = new Node;
+
+    newNode->data = lane;
+    newNode->next = NULL;
+
+    if (head == NULL)
+    {
+        head = newNode;
+    }
+    else
+    {
+        NodePtr temp = head;
+
+        while (temp->next != NULL)
+        {
+            temp = temp->next;
+        }
+
+        temp->next = newNode;
+    }
+}
+
+NodePtr getLane(NodePtr head, int index)
+{
+    NodePtr temp = head;
+
+    int counter = 0;
+
+    while (temp != NULL && counter < index)
+    {
+        temp = temp->next;
+        counter++;
+    }
+
+    return temp;
+}
+
+void freeList(NodePtr& head)
+{
+    NodePtr temp;
+
+    while (head != NULL)
+    {
+        temp = head;
+        head = head->next;
+
+        delete temp;
+    }
+
+    head = NULL;
+}
+
+string shiftLeft(string lane)
+{
+    string inner = lane.substr(1, WIDTH);
+
+    char first = inner[0];
+
+    for (int i = 0; i < WIDTH - 1; i++)
+    {
+        inner[i] = inner[i + 1];
+    }
+
+    inner[WIDTH - 1] = first;
+
+    return "|" + inner + "|";
+}
+
+string shiftRight(string lane)
+{
+    string inner = lane.substr(1, WIDTH);
+
+    char last = inner[WIDTH - 1];
+
+    for (int i = WIDTH - 1; i > 0; i--)
+    {
+        inner[i] = inner[i - 1];
+    }
+
+    inner[0] = last;
+
+    return "|" + inner + "|";
+}
+
+string generateBufferLane()
+{
+    string lane = "|";
+
+    for (int i = 0; i < WIDTH; i++)
+    {
+        lane += '.';
+    }
+
+    lane += "|";
+
+    return lane;
+}
+
+string generateRoadLane(int laneNum, int difficulty)
+{
+    string lane(WIDTH, '.');
+
+    int trucks;
+
+    if (difficulty == 1)
+    {
+        trucks = 2;
+    }
+    else
+    {
+        trucks = 3;
+    }
+
+    for (int t = 0; t < trucks; t++)
+    {
+        int start = rand() % (WIDTH - 5);
+
+        for (int i = 0; i < 5; i++)
+        {
+            lane[start + i] = '#';
+        }
+    }
+
+    return "|" + lane + "|";
+}
+
+string generateRiverLane(int laneNum, int difficulty)
+{
+    string lane(WIDTH, '~');
+
+    int logs;
+
+    if (difficulty == 1)
+    {
+        logs = 2;
+    }
+    else
+    {
+        logs = 3;
+    }
+
+    for (int l = 0; l < logs; l++)
+    {
+        int start = rand() % (WIDTH - 4);
+
+        for (int i = 0; i < 4; i++)
+        {
+            lane[start + i] = '=';
+        }
+    }
+
+    return "|" + lane + "|";
+}
+
+NodePtr buildRoad(int difficulty)
+{
+    NodePtr head = NULL;
+
+    // FINISH LINE
+    appendNode(head, "|========================================|");
+
+    // ROWS 1-5 ROAD
+    for (int i = 0; i < 5; i++)
+    {
+        appendNode(head, generateRoadLane(i, difficulty));
+    }
+
+    // ROW 6 BUFFER
+    appendNode(head, generateBufferLane());
+
+    // ROWS 7-8 RIVER
+    for (int i = 0; i < 2; i++)
+    {
+        appendNode(head, generateRiverLane(i, difficulty));
+    }
+
+    // ROW 9 BUFFER
+    appendNode(head, generateBufferLane());
+
+    // ROWS 10-14 ROAD
+    for (int i = 0; i < 5; i++)
+    {
+        appendNode(head, generateRoadLane(i, difficulty));
+    }
+
+    // ROW 15 BUFFER
+    appendNode(head, generateBufferLane());
+
+    // ROWS 16-17 RIVER
+    for (int i = 0; i < 2; i++)
+    {
+        appendNode(head, generateRiverLane(i, difficulty));
+    }
+
+    // ROW 18 BUFFER
+    appendNode(head, generateBufferLane());
+
+    // ROW 19 PLAYER START
+    appendNode(head,
+        "|........................................|");
+
+    return head;
+}
+
+bool isRoadLane(int row)
+{
+    return (row >= 1 && row <= 5) ||
+           (row >= 10 && row <= 14);
+}
+
+bool isRiverLane(int row)
+{
+    return (row >= 7 && row <= 8) ||
+           (row >= 16 && row <= 17);
+}
+
+void displayRoad(NodePtr head,
+                 int playerX,
+                 int playerY,
+                 string playerName,
+                 int lives,
+                 int crossings)
+{
+    gotoXY(0, 0);
+
+    setColor(11);
+
+    cout << "---------- Road Crossing Challenge ----------\n";
+
+    setColor(15);
+
+    cout << "Player: "
+         << playerName
+         << " | Lives: "
+         << lives
+         << " | Crossings: "
+         << crossings
+         << "          \n";
+
+    NodePtr temp = head;
+
+    int row = 0;
+
+    while (temp != NULL)
+    {
+        string lane = temp->data;
+
+        // overlay player
+        if (row == playerY)
+        {
+            lane[playerX] = PLAYER;
+        }
+
+        for (int i = 0; i < lane.length(); i++)
+        {
+            char c = lane[i];
+
+            // trucks
+            if (c == '#')
+            {
+                setColor(12);
+            }
+
+            // logs + finish
+            else if (c == '=')
+            {
+                setColor(6);
+            }
+
+            // water
+            else if (c == '~')
+            {
+                setColor(9);
+            }
+
+            // player
+            else if (c == 'P')
+            {
+                setColor(10);
+            }
+
+            // borders
+            else if (c == '|')
+            {
+                setColor(15);
+            }
+
+            // safe lane
+            else
+            {
+                setColor(8);
+            }
+
+            cout << c;
+        }
+
+        cout << "   \n";
+
+        temp = temp->next;
+        row++;
+    }
+
+    setColor(15);
+
+    cout << "\nArrow Keys to Move        \n";
+}   
+
+void shiftObstacles(NodePtr head)
+{
+    NodePtr temp = head;
+
+    int row = 0;
+
+    while (temp != NULL)
+    {
+        if (isRoadLane(row))
+        {
+            // alternating directions
+            if (row % 2 == 1)
+            {
+                temp->data = shiftRight(temp->data);
+            }
+            else
+            {
+                temp->data = shiftLeft(temp->data);
+            }
+        }
+
+        else if (isRiverLane(row))
+        {
+            if (row % 2 == 1)
+            {
+                temp->data = shiftRight(temp->data);
+            }
+            else
+            {
+                temp->data = shiftLeft(temp->data);
+            }
+        }
+
+        temp = temp->next;
+        row++;
+    }
+}
+
+bool checkCollision(NodePtr head,
+                    int playerX,
+                    int playerY)
+{
+    if (!isRoadLane(playerY))
+    {
+        return false;
+    }
+
+    NodePtr lane = getLane(head, playerY);
+
+    if (lane == NULL)
+    {
+        return false;
+    }
+
+    if (lane->data[playerX] == '#')
+    {
+        return true;
+    }
+
+    return false;
+}
+
+bool checkDrowned(NodePtr head,
+                  int playerX,
+                  int playerY)
+{
+    if (!isRiverLane(playerY))
+    {
+        return false;
+    }
+
+    NodePtr lane = getLane(head, playerY);
+
+    if (lane == NULL)
+    {
+        return false;
+    }
+
+    if (lane->data[playerX] == '~')
+    {
+        return true;
+    }
+
+    return false;
+}
+
+void updatePlayerWithLog(NodePtr head,
+                         int& playerX,
+                         int playerY)
+{
+    if (!isRiverLane(playerY))
+    {
+        return;
+    }
+
+    NodePtr lane = getLane(head, playerY);
+
+    if (lane == NULL)
+    {
+        return;
+    }
+
+    // player standing on log
+    if (lane->data[playerX] == '=')
+    {
+        // odd rows move right
+        if (playerY % 2 == 1)
+        {
+            playerX++;
+        }
+        else
+        {
+            playerX--;
+        }
+
+        // boundary death
+        if (playerX <= 0 || playerX >= 41)
+        {
+            playerX = 20;
+        }
+    }
+}
+
+void keyboardInput(int& playerX,
+                   int& playerY)
+{
+    if (_kbhit())
+    {
+        int key = _getch();
+
+        // arrow keys
+        if (key == 224)
+        {
+            key = _getch();
+
+            switch (key)
+            {
+                case 72: // UP
+                    if (playerY > 0)
+                    {
+                        playerY--;
+                    }
+                    break;
+
+                case 80: // DOWN
+                    if (playerY < 19)
+                    {
+                        playerY++;
+                    }
+                    break;
+
+                case 75: // LEFT
+                    if (playerX > 1)
+                    {
+                        playerX--;
+                    }
+                    break;
+
+                case 77: // RIGHT
+                    if (playerX < 40)
+                    {
+                        playerX++;
+                    }
+                    break;
+            }
+        }
+    }
+}
+
+void hideCursor()
+{
+    HANDLE consoleHandle =
+        GetStdHandle(STD_OUTPUT_HANDLE);
+
+    CONSOLE_CURSOR_INFO info;
+
+    info.dwSize = 100;
+    info.bVisible = FALSE;
+
+    SetConsoleCursorInfo(consoleHandle, &info);
+}
+
+void gotoXY(int x, int y)
+{
+    COORD coord;
+
+    coord.X = x;
+    coord.Y = y;
+
+    SetConsoleCursorPosition(
+        GetStdHandle(STD_OUTPUT_HANDLE),
+        coord
+    );
+}
+
+void saveScore(string name,
+               int score)
+{
+    ofstream file("leaderboard.txt",
+                  ios::app);
+
+    if (file.is_open())
+    {
+        file << name
+             << " "
+             << score
+             << endl;
+
+        file.close();
+    }
+}
+
+void showLeaderboard()
+{
+    ifstream file("leaderboard.txt");
+
+    vector<LeaderboardEntry> entries;
+
+    LeaderboardEntry temp;
+
+    while (file >> temp.name >> temp.score)
+    {
+        entries.push_back(temp);
+    }
+
+    file.close();
+
+    sort(entries.begin(),
+         entries.end(),
+         [](LeaderboardEntry a,
+            LeaderboardEntry b)
+         {
+             return a.score > b.score;
+         });
+
+    cout << "\n===== LEADERBOARD =====\n\n";
+
+    int limit;
+
+    if (entries.size() < 5)
+    {
+        limit = entries.size();
+    }
+    else
+    {
+        limit = 5;
+    }
+
+    for (int i = 0; i < limit; i++)
+    {
+        cout << i + 1
+             << ". "
+             << entries[i].name
+             << " - "
+             << entries[i].score
+             << " crossing(s)\n";
+    }
+
+    cout << endl;
+}
+
+// =====================================
+// MAIN
+// =====================================
+
+int main()
+{
+    srand(time(0));
+    
+    hideCursor();
+
+    showTitleScreen();
+
+    string playerName = getPlayerName();
+
+    int difficulty = chooseDifficulty();
+
+    int gameSpeed;
+
+    if (difficulty == 1)
+    {
+        gameSpeed = 180;
+    }
+    else
+    {
+        gameSpeed = 100;
+    }
+
+    NodePtr head = buildRoad(difficulty);
+
+    int playerX = 20;
+    int playerY = 19;
+
+    int lives = 3;
+    int crossings = 0;
+
+    bool running = true;
+
+    while (running)
+    {
+        // move obstacles
+        shiftObstacles(head);
+
+        // move player with logs
+        updatePlayerWithLog(head,
+                            playerX,
+                            playerY);
+
+        // input
+        keyboardInput(playerX,
+                      playerY);
+
+        // collision
+        if (checkCollision(head,
+                           playerX,
+                           playerY))
+        {
+            lives--;
+
+            playerX = 20;
+            playerY = 19;
+
+            Sleep(500);
+        }
+
+        // drowning
+        if (checkDrowned(head,
+                         playerX,
+                         playerY))
+        {
+            lives--;
+
+            playerX = 20;
+            playerY = 19;
+
+            Sleep(500);
+        }
+
+        // WIN CROSSING
+        if (playerY == 0)
+        {
+            crossings++;
+
+            playerX = 20;
+            playerY = 19;
+
+            freeList(head);
+
+            head = buildRoad(difficulty);
+
+            Sleep(500);
+        }
+
+        // FULL GAME WIN
+        if (crossings == 5)
+        {
+            system("cls");
+
+            cout << "====================================\n";
+            cout << " YOU WIN!\n";
+            cout << "====================================\n\n";
+
+            cout << playerName
+                 << " completed 5 crossings!\n";
+
+            saveScore(playerName, crossings);
+
+            showLeaderboard();
+
+            running = false;
+        }
+
+        // GAME OVER
+        if (lives <= 0)
+        {
+            system("cls");
+
+            cout << "====================================\n";
+            cout << " GAME OVER\n";
+            cout << "====================================\n\n";
+
+            cout << playerName
+                 << " lost all lives!\n";
+
+            running = false;
+        }
+
+        displayRoad(head,
+                    playerX,
+                    playerY,
+                    playerName,
+                    lives,
+                    crossings);
+
+        Sleep(gameSpeed);
+    }
+
+    freeList(head);
+
+    return 0;
+}
